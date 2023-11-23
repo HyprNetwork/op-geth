@@ -1,33 +1,27 @@
-# Support setting various labels on the final image
-ARG COMMIT=""
-ARG VERSION=""
-ARG BUILDNUM=""
+FROM rust:1.73.0-buster AS builder
 
-# Build Geth in a stock Go builder container
-FROM golang:1.20-alpine as builder
+RUN wget https://go.dev/dl/go1.19.3.linux-amd64.tar.gz
+RUN tar -C /usr/local -xzf go1.19.3.linux-amd64.tar.gz
+ENV PATH="$PATH:/usr/local/go/bin"
 
-RUN apk add --no-cache gcc musl-dev linux-headers git
+WORKDIR /build
+ADD . .
 
-# Get dependencies - will also be cached if we won't change go.mod/go.sum
-COPY go.mod /go-ethereum/
-COPY go.sum /go-ethereum/
-RUN cd /go-ethereum && go mod download
+RUN mkdir ~/.ssh && cp id_ed25519 ~/.ssh/id_ed25519
+RUN chmod 400 ~/.ssh/id_ed25519
+RUN ssh-keyscan github.com >> ~/.ssh/known_hosts
+RUN make geth
 
-ADD . /go-ethereum
-RUN cd /go-ethereum && go run build/ci.go install -static ./cmd/geth
+FROM debian:buster
+RUN apt-get update -y
+RUN apt-get install -y curl
+RUN apt-get install -y ca-certificates
 
-# Pull Geth into a second stage deploy alpine container
-FROM alpine:latest
+WORKDIR /app
+COPY --from=builder /build/build/bin/geth .
+COPY --from=builder /build/target/release/libprecompiles.so /lib/libprecompiles.so
+RUN ldconfig
+Add start.sh start.sh
+RUN chmod +x start.sh
 
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
-
-EXPOSE 8545 8546 30303 30303/udp
-ENTRYPOINT ["geth"]
-
-# Add some metadata labels to help programatic image consumption
-ARG COMMIT=""
-ARG VERSION=""
-ARG BUILDNUM=""
-
-LABEL commit="$COMMIT" version="$VERSION" buildnum="$BUILDNUM"
+CMD ["./start.sh"]
