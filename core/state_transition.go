@@ -168,7 +168,7 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 	}
 	// If baseFee provided, set gasPrice to effectiveGasPrice.
 	if baseFee != nil {
-		msg.GasPrice = cmath.BigMin(msg.GasPrice.Add(big.NewInt(0), baseFee), msg.GasFeeCap)
+		msg.GasPrice = cmath.BigMin(msg.GasPrice.Add(msg.GasTipCap, baseFee), msg.GasFeeCap)
 	}
 	var err error
 	msg.From, err = types.Sender(s, tx)
@@ -237,6 +237,7 @@ func (st *StateTransition) to() common.Address {
 
 func (st *StateTransition) buyGas() error {
 	mgval := new(big.Int).SetUint64(st.msg.GasLimit)
+	// log.Info("buyGas", "gasPrice", st.msg.GasPrice)
 	mgval = mgval.Mul(mgval, st.msg.GasPrice)
 	var l1Cost *big.Int
 	if st.evm.Context.L1CostFunc != nil && !st.msg.SkipAccountChecks {
@@ -263,7 +264,9 @@ func (st *StateTransition) buyGas() error {
 	st.gasRemaining += st.msg.GasLimit
 
 	st.initialGas = st.msg.GasLimit
+	// log.Info("bugGas", "mgval", mgval, "before sub from", st.state.GetBalance(st.msg.From))
 	st.state.SubBalance(st.msg.From, mgval)
+	// log.Info("bugGas", "after sub from", st.state.GetBalance(st.msg.From))
 	return nil
 }
 
@@ -328,6 +331,17 @@ func (st *StateTransition) preCheck() error {
 				return fmt.Errorf("%w: address %v, maxFeePerGas: %s baseFee: %s", ErrFeeCapTooLow,
 					msg.From.Hex(), msg.GasFeeCap, st.evm.Context.BaseFee)
 			}
+		}
+	}
+	// log.Info("check", "blockNumber", st.evm.Context.BlockNumber,
+	// 	"gasPrice", st.msg.GasPrice,
+	// 	"blockNotWithGasTipFee", st.evm.ChainConfig().BlockNotWithGasTipFee,
+	// 	"isTrue", st.evm.ChainConfig().IsBlockNotWithGasTipFee(st.evm.Context.BlockNumber),
+	// 	"baseFee", st.evm.Context.BaseFee,
+	// )
+	if st.evm.ChainConfig().IsBlockNotWithGasTipFee(st.evm.Context.BlockNumber) {
+		if st.evm.Context.BaseFee != nil {
+			st.msg.GasPrice = cmath.BigMin(msg.GasPrice.Add(big.NewInt(0), st.evm.Context.BaseFee), msg.GasFeeCap)
 		}
 	}
 	return st.buyGas()

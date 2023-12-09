@@ -51,3 +51,5 @@ logs/
 
 /target
 /Cargo.lock
+data/
+genesis.json

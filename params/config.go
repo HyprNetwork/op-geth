@@ -72,6 +72,7 @@ var (
 		TerminalTotalDifficultyPassed: true,
 		ShanghaiTime:                  newUint64(1681338455),
 		Ethash:                        new(EthashConfig),
+		BlockNotWithGasTipFee:         nil,
 	}
 	// SepoliaChainConfig contains the chain parameters to run a node on the Sepolia test network.
 	SepoliaChainConfig = &ChainConfig{
@@ -94,6 +95,7 @@ var (
 		MergeNetsplitBlock:            big.NewInt(1735371),
 		ShanghaiTime:                  newUint64(1677557088),
 		Ethash:                        new(EthashConfig),
+		BlockNotWithGasTipFee:         nil,
 	}
 	// RinkebyChainConfig contains the chain parameters to run a node on the Rinkeby test network.
 	RinkebyChainConfig = &ChainConfig{
@@ -116,6 +118,7 @@ var (
 			Period: 15,
 			Epoch:  30000,
 		},
+		BlockNotWithGasTipFee: nil,
 	}
 	// GoerliChainConfig contains the chain parameters to run a node on the Görli test network.
 	GoerliChainConfig = &ChainConfig{
@@ -141,6 +144,7 @@ var (
 			Period: 15,
 			Epoch:  30000,
 		},
+		BlockNotWithGasTipFee: nil,
 	}
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Ethash consensus.
@@ -169,6 +173,7 @@ var (
 		TerminalTotalDifficultyPassed: true,
 		Ethash:                        new(EthashConfig),
 		Clique:                        nil,
+		BlockNotWithGasTipFee:         nil,
 	}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
@@ -198,6 +203,7 @@ var (
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        nil,
 		Clique:                        &CliqueConfig{Period: 0, Epoch: 30000},
+		BlockNotWithGasTipFee:         nil,
 	}
 
 	// TestChainConfig contains every protocol change (EIPs) introduced
@@ -227,6 +233,7 @@ var (
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
 		Clique:                        nil,
+		BlockNotWithGasTipFee:         nil,
 	}
 
 	// NonActivatedConfig defines the chain configuration without activating
@@ -256,6 +263,7 @@ var (
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
 		Clique:                        nil,
+		BlockNotWithGasTipFee:         nil,
 	}
 	TestRules = TestChainConfig.Rules(new(big.Int), false, 0)
 
@@ -331,6 +339,9 @@ type ChainConfig struct {
 
 	// Optimism config, nil if not active
 	Optimism *OptimismConfig `json:"optimism,omitempty"`
+
+	// calcute total gasFee with no gasTipFee (nil = no fork, 0 = already on blockNotWithGasTipFee)
+	BlockNotWithGasTipFee *big.Int `json:"blockNotWithGasTipFee,omitempty"`
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -423,6 +434,7 @@ func (c *ChainConfig) Description() string {
 	if c.GrayGlacierBlock != nil {
 		banner += fmt.Sprintf(" - Gray Glacier:                #%-8v (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/gray-glacier.md)\n", c.GrayGlacierBlock)
 	}
+	// TODO add BlockNotWithGasTipFee describe
 	banner += "\n"
 
 	// Add a special section for the merge as it's non-obvious
@@ -580,6 +592,10 @@ func (c *ChainConfig) IsOptimismPreBedrock(num *big.Int) bool {
 	return c.IsOptimism() && !c.IsBedrock(num)
 }
 
+func (c *ChainConfig) IsBlockNotWithGasTipFee(num *big.Int) bool {
+	return isBlockForked(c.BlockNotWithGasTipFee, num)
+}
+
 // CheckCompatible checks whether scheduled fork transitions have been imported
 // with a mismatching chain configuration.
 func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64, time uint64) *ConfigCompatError {
@@ -628,6 +644,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "muirGlacierBlock", block: c.MuirGlacierBlock, optional: true},
 		{name: "berlinBlock", block: c.BerlinBlock},
 		{name: "londonBlock", block: c.LondonBlock},
+		{name: "blockNotWithGasTipFee", block: c.BlockNotWithGasTipFee, optional: true},
 		{name: "arrowGlacierBlock", block: c.ArrowGlacierBlock, optional: true},
 		{name: "grayGlacierBlock", block: c.GrayGlacierBlock, optional: true},
 		{name: "mergeNetsplitBlock", block: c.MergeNetsplitBlock, optional: true},
@@ -736,6 +753,9 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if isForkTimestampIncompatible(c.PragueTime, newcfg.PragueTime, headTimestamp) {
 		return newTimestampCompatError("Prague fork timestamp", c.PragueTime, newcfg.PragueTime)
+	}
+	if isForkBlockIncompatible(c.BlockNotWithGasTipFee, newcfg.BlockNotWithGasTipFee, headNumber) {
+		return newBlockCompatError("NotWithGasTipFee fork block", c.BlockNotWithGasTipFee, newcfg.BlockNotWithGasTipFee)
 	}
 	return nil
 }
@@ -889,6 +909,7 @@ type Rules struct {
 	IsBerlin, IsLondon                                      bool
 	IsMerge, IsShanghai, IsCancun, IsPrague                 bool
 	IsOptimismBedrock, IsOptimismRegolith                   bool
+	IsBlockNotWithGasTipFee                                 bool
 }
 
 // Rules ensures c's ChainID is not nil.
@@ -916,5 +937,7 @@ func (c *ChainConfig) Rules(num *big.Int, isMerge bool, timestamp uint64) Rules 
 		// Optimism
 		IsOptimismBedrock:  c.IsOptimismBedrock(num),
 		IsOptimismRegolith: c.IsOptimismRegolith(timestamp),
+		// GasTipFee
+		IsBlockNotWithGasTipFee: c.IsBlockNotWithGasTipFee(num),
 	}
 }
