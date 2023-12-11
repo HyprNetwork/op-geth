@@ -341,7 +341,7 @@ func (st *StateTransition) preCheck() error {
 	// )
 	if st.evm.ChainConfig().IsBlockNotWithGasTipFee(st.evm.Context.BlockNumber) {
 		if st.evm.Context.BaseFee != nil {
-			st.msg.GasPrice = cmath.BigMin(msg.GasPrice.Add(new(big.Int).Div(msg.GasTipCap, big.NewInt(1000)), st.evm.Context.BaseFee), msg.GasFeeCap)
+			st.msg.GasPrice = cmath.BigMin(msg.GasPrice.Add(msg.GasTipCap.Div(msg.GasTipCap, big.NewInt(1000)), st.evm.Context.BaseFee), msg.GasFeeCap)
 		}
 	}
 	return st.buyGas()
