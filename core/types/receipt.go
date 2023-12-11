@@ -487,7 +487,9 @@ func (rs Receipts) DeriveFields(config *params.ChainConfig, hash common.Hash, nu
 		// The transaction type and hash can be retrieved from the transaction itself
 		rs[i].Type = txs[i].Type()
 		rs[i].TxHash = txs[i].Hash()
-
+		if config.IsBlockNotWithGasTipFee(big.NewInt(int64(number))) {
+			txs[i].inner.gasTipCap().Div(txs[i].inner.gasTipCap(), big.NewInt(1000))
+		}
 		rs[i].EffectiveGasPrice = txs[i].inner.effectiveGasPrice(new(big.Int), baseFee)
 
 		// block location fields
