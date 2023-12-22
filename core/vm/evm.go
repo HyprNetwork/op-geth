@@ -43,6 +43,7 @@ type (
 )
 
 func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
+
 	var precompiles map[common.Address]PrecompiledContract
 	switch {
 	case evm.chainRules.IsBerlin:
@@ -54,6 +55,20 @@ func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
 	default:
 		precompiles = PrecompiledContractsHomestead
 	}
+
+	// append wasm precompile
+	wasmContractAddr := common.BytesToAddress([]byte("wasm"))
+	if evm.StateDB.Exist(wasmContractAddr) {
+		wasmAddressBytes := evm.StateDB.GetCode(wasmContractAddr)
+		wasmAddress := common.BytesToAddressList(wasmAddressBytes)
+		for _, v := range wasmAddress {
+			precompiles[v] = &contractwasm{
+				Address: v.Bytes(),
+				Wasm:    evm.StateDB.GetCode(v),
+			}
+		}
+	}
+
 	p, ok := precompiles[addr]
 	return p, ok
 }
