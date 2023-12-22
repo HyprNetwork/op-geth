@@ -18,6 +18,7 @@ package vm
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/assert"
 )
 
 // precompiledTest defines the input/output pairs for precompiled contract tests.
@@ -390,4 +392,21 @@ func BenchmarkPrecompiledBLS12381G2MultiExpWorstCase(b *testing.B) {
 		NoBenchmark: false,
 	}
 	benchmarkPrecompiled("0f", testcase, b)
+}
+
+func TestContractWasm(t *testing.T) {
+
+	data, err := os.ReadFile("./wasm/hello_wasm.wasm")
+	assert.Nil(t, err)
+	c := &contractwasm{
+		Wasm: data,
+	}
+
+	input := []byte{1, 2, 3, 4}
+	r1 := c.RequiredGas(input)
+	assert.Equal(t, uint64(4), r1)
+
+	r2, err := c.Run(input)
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{1, 2, 3, 4}, r2)
 }

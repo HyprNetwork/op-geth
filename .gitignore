@@ -52,4 +52,10 @@ logs/
 /target
 /Cargo.lock
 data/
+data1/
+data2/
 genesis.json
+start2.sh
+password
+jwt.txt
+chain.sh

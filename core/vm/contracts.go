@@ -17,9 +17,11 @@
 package vm
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -30,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/bn256"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/precompiles"
+	"github.com/tetratelabs/wazero"
 	"golang.org/x/crypto/ripemd160"
 )
 
@@ -1053,4 +1056,81 @@ func (c *bls12381MapG2) Run(input []byte) ([]byte, error) {
 
 	// Encode the G2 point to 256 bytes
 	return g.EncodePoint(r), nil
+}
+
+type contractwasm struct {
+	Address []byte
+	Wasm    []byte
+}
+
+func (c *contractwasm) RequiredGas(input []byte) uint64 {
+	ctx := context.Background()
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+	mod, err := r.Instantiate(ctx, c.Wasm)
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	required := mod.ExportedFunction("required_gas")
+	allocate := mod.ExportedFunction("allocate")
+	deallocate := mod.ExportedFunction("deallocate")
+
+	inputPtrResult, err := allocate.Call(ctx, uint64(len(input)))
+	if err != nil {
+		log.Panicln(err)
+	}
+	inputPtr := inputPtrResult[0]
+	defer deallocate.Call(ctx, inputPtr, uint64(len(input)))
+
+	if !mod.Memory().Write(uint32(inputPtr), input) {
+		log.Panicf("Memory.Write(%d, %d) out of range of memory size %d",
+			inputPtr, len(input), mod.Memory().Size())
+	}
+
+	results, err := required.Call(ctx, inputPtr, uint64(len(input)))
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	return results[0]
+}
+
+func (c *contractwasm) Run(input []byte) ([]byte, error) {
+	ctx := context.Background()
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+	mod, err := r.Instantiate(ctx, c.Wasm)
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	allocate := mod.ExportedFunction("allocate")
+	deallocate := mod.ExportedFunction("deallocate")
+	run := mod.ExportedFunction("run")
+	inputPtrResult, err := allocate.Call(ctx, uint64(len(input)))
+	if err != nil {
+		log.Panicln(err)
+	}
+	inputPtr := inputPtrResult[0]
+	defer deallocate.Call(ctx, inputPtr, uint64(len(input)))
+
+	if !mod.Memory().Write(uint32(inputPtr), input) {
+		log.Panicf("Memory.Write(%d, %d) out of range of memory size %d",
+			inputPtr, len(input), mod.Memory().Size())
+	}
+
+	ptrSize, err := run.Call(ctx, inputPtr, uint64(len(input)))
+	if err != nil {
+		log.Panicln(err)
+	}
+
+	resultPtr := uint32(ptrSize[0] >> 32)
+	resultSize := uint32(ptrSize[0])
+
+	if bytes, ok := mod.Memory().Read(resultPtr, resultSize); !ok {
+		return nil, errors.New("read content error")
+	} else {
+		return bytes, nil
+	}
 }

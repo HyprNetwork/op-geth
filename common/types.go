@@ -209,6 +209,20 @@ func BytesToAddress(b []byte) Address {
 	return a
 }
 
+func BytesToAddressList(b []byte) []Address {
+	addresses := make([]Address, 0)
+	for {
+		var a Address
+		if len(b) == 0 || len(b) < AddressLength {
+			break
+		}
+		a.SetBytes(b[:AddressLength])
+		addresses = append(addresses, a)
+		b = b[AddressLength:]
+	}
+	return addresses
+}
+
 // BigToAddress returns Address with byte values of b.
 // If b is larger than len(h), b will be cropped from the left.
 func BigToAddress(b *big.Int) Address { return BytesToAddress(b.Bytes()) }
